@@ -2,13 +2,8 @@
 
 namespace ErickComp\XLivewire\Features;
 
-use Illuminate\Contracts\View\View;
-
-use Livewire\Attributes\Session;
-
-use ErickComp\XLivewire\Aux\HasProtectedSessionProps;
 use ErickComp\XLivewire\Wireables\XSlots;
-
+use Illuminate\Contracts\View\View;
 
 trait HasXSlots
 {
@@ -18,11 +13,24 @@ trait HasXSlots
 
     public XSlots $_xSlots;
 
-    public function mountHasXSlots(XSlots $xSlots)
+    public static function propNameHasXSlots(): string
     {
-        $prop = \property_exists($this, 'xSlots')
+        return \property_exists(static::class, 'xSlots')
             ? 'xSlots'
             : '_xSlots';
+    }
+
+    public static function createHasXSlotsProp(array $bladeComponentData)
+    {
+        return [
+            'xSlots',
+            new XSlots($bladeComponentData[static::X_LIVEWIRE_HAS_XSLOTS_LARAVEL_BLADE_SLOTS_DATA_VAR]),
+        ];
+    }
+
+    public function mountHasXSlots(XSlots $xSlots)
+    {
+        $prop = $this->propNameHasXSlots();
 
         $this->{$prop} = $xSlots;
 
@@ -33,9 +41,7 @@ trait HasXSlots
 
     public function bootHasXSlots()
     {
-        $prop = \property_exists($this, 'xSlots')
-            ? 'xSlots'
-            : '_xSlots';
+        $prop = $this->propNameHasXSlots();
 
         if (!(new \ReflectionClass(static::class))->getProperty($prop)->isPublic()) {
             $this->nonPublicPropFromSession($prop, new XSlots([]));
@@ -44,32 +50,22 @@ trait HasXSlots
 
     public function renderingHasXSlots(View $view, $data)
     {
-        $prop = \property_exists($this, 'xSlots')
-            ? 'xSlots'
-            : '_xSlots';
+        $prop = $this->propNameHasXSlots();
 
         $slots = $this->{$prop}->getAll();
 
-        $viewData = [];
+        $slotsData = [];
         foreach ($slots as $varName => $slotObject) {
             if ($varName === '__default') {
-                $viewData['slot'] = $slots['__default'];
+                $slotsData['slot'] = $slots['__default'];
             } else {
-                $viewData[$varName] = $slots[$varName];
+                $slotsData[$varName] = $slots[$varName];
             }
         }
 
         return $view
-            ->with($viewData)
+            ->with($slotsData)
             //->with('xSlots', $this->{$prop})
         ;
-    }
-
-    public static function createHasXSlotsProp(array $bladeComponentData)
-    {
-        return [
-            'xSlots',
-            new XSlots($bladeComponentData[static::X_LIVEWIRE_HAS_XSLOTS_LARAVEL_BLADE_SLOTS_DATA_VAR])
-        ];
     }
 }

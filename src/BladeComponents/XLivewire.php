@@ -72,22 +72,41 @@ class XLivewire extends BladeComponent
                 $livewireClassFeatures[$livewireComponentClass] = \array_intersect($classTraits, $availableFeatures);
             }
 
+            $featuresPropsNames = [];
             $featuresBladeProps = [];
             $featuresData = [];
+
+            foreach ($livewireClassFeatures[$livewireComponentClass] as $feature) {
+                $propNameMethod = "propName" . Str::studly(\class_basename($feature));
+
+                if (\method_exists($livewireComponentClass, $propNameMethod)) {
+                    $featuresPropsNames[] = $livewireComponentClass::$propNameMethod();
+                }
+            }
+
+            $this->extractLivewireComponentPublicPropsFromWrapperData($data, $livewireComponentClass, $featuresPropsNames);
+
             foreach ($livewireClassFeatures[$livewireComponentClass] as $feature) {
                 $featureCreatePropMethod = 'create' . Str::studly(\class_basename($feature)) . 'Prop';
 
                 if (!\method_exists($livewireComponentClass, $featureCreatePropMethod)) {
-                    throw new \LogicException("Trait [$feature] MUST implement method [$featureCreatePropMethod]");
+                    //throw new \LogicException("Trait [$feature] MUST implement method [$featureCreatePropMethod]");
+                    continue;
                 }
 
                 [$featurePropName, $featurePropValue] = \call_user_func([$livewireComponentClass, $featureCreatePropMethod], $data);
 
                 $featuresBladeProps[] = ':' . Str::kebab($featurePropName) . '="$' . $featurePropName . '"';
                 $featuresData[$featurePropName] = $featurePropValue;
+                $featuresPropsNames[] = $livewireComponentClass::{"propName" . Str::studly(\class_basename($feature))}();
             }
 
             $livewireData = [...$data, ...$featuresData];
+
+            $classProps = \array_map(
+                fn(\ReflectionProperty $rProp) => $rProp->getName(),
+                static::getLivewireComponentProperties($livewireComponentClass),
+            );
 
             $livewireProps = \array_merge(
                 array_filter(
@@ -98,18 +117,24 @@ class XLivewire extends BladeComponent
                             }
                             return ':' . Str::kebab($propName) . '="$' . $propName . '"';
                         },
-                        \array_keys(\get_class_vars($livewireComponentClass))
+                        $classProps,
                     ),
                     fn($elem) => $elem !== null
                 ),
-                $featuresBladeProps
+                $featuresBladeProps,
             );
+
+            // Teste
+            //$livewireProps[] = ':attributes="$xAttributesProcessed"';
+            //$livewireProps[] = ':_x-attributes-processed="$xAttributesProcessed"';
+
+            //$livewireData['attributes'] = $data['xAttributesProcessed'];s
 
             $livewireComponentStr = "<livewire:$livewireComponentName " . \implode(' ', $livewireProps) . ' />';
 
             $rendered = Blade::render(
                 $livewireComponentStr,
-                $livewireData
+                $livewireData,
             );
 
             return $rendered;
@@ -135,6 +160,49 @@ class XLivewire extends BladeComponent
         }
 
         return $traits;
+    }
+
+    private function extractLivewireComponentPublicPropsFromWrapperData(
+        array &$data,
+        string $componentClassName,
+        array $xLivewireFeaturesPropsNames,
+    ): void {
+        $classProps = \array_map(
+            fn(\ReflectionProperty $rProp) => $rProp->getName(),
+            static::getLivewireComponentProperties($componentClassName),
+        );
+
+        $componentPropsNames = \array_diff(
+            $classProps,
+            $xLivewireFeaturesPropsNames,
+        );
+
+        /** @var ComponentAttributeBag */
+        $attributes = $data['attributes'];
+        $componentPropsValues = $attributes->onlyProps($componentPropsNames);
+        $attributes = $attributes->exceptProps($componentPropsNames);
+
+        $componentPropsValuesCamelCased = [];
+        foreach ($componentPropsValues->all() as $propNameKebabCased => $propVal) {
+            $componentPropsValuesCamelCased[Str::camel($propNameKebabCased)] = $propVal;
+        }
+
+        $data = [
+            ...$data,
+            ...['attributes' => $attributes],
+            //...$componentPropsValues->all(),
+            ...$componentPropsValuesCamelCased,
+        ];
+    }
+
+    public static function getLivewireComponentProperties(string $componentClassName): array
+    {
+        return \array_filter(
+            (new \ReflectionClass($componentClassName))->getProperties(),
+            function (\ReflectionProperty $property) {
+                return !$property->isStatic() && $property->getDeclaringClass()->getName() !== LivewireComponent::class;
+            }
+        );
     }
 
 }
